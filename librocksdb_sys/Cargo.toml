@@ -6,7 +6,7 @@ build = "build.rs"
 links = "rocksdb"
 
 [dependencies]
-libc = "0.2.11"
+libc = "0.2"
 
 [dev-dependencies]
 tempdir = "0.3"
@@ -23,7 +23,7 @@ cc = "1.0.3"
 cmake = "0.1"
 
 [dependencies.libz-sys]
-version = "1.0.25"
+version = "1.0"
 features = ["static"]
 
 [dependencies.bzip2-sys]
