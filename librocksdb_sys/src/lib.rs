@@ -1401,6 +1401,15 @@ extern "C" {
     pub fn crocksdb_compactionfiltercontext_is_bottommost_level(
         context: *const DBCompactionFilterContext,
     ) -> bool;
+    pub fn crocksdb_compactionfiltercontext_num_levels(
+        context: *const DBCompactionFilterContext,
+    ) -> i32;
+    pub fn crocksdb_compactionfiltercontext_level_end_key(
+        context: *const DBCompactionFilterContext,
+        offset: i32,
+        key: *mut *const u8,
+        len: *mut i32,
+    ) -> i32;
 
     // Compaction filter factory
     pub fn crocksdb_compactionfilterfactory_create(

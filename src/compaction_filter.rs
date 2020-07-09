@@ -132,6 +132,27 @@ impl CompactionFilterContext {
         let ctx = &self.0 as *const DBCompactionFilterContext;
         unsafe { crocksdb_ffi::crocksdb_compactionfiltercontext_is_bottommost_level(ctx) }
     }
+
+    pub fn num_levels(&self) -> usize {
+        let ctx = &self.0 as *const DBCompactionFilterContext;
+        unsafe { crocksdb_ffi::crocksdb_compactionfiltercontext_num_levels(ctx) as usize }
+    }
+
+    pub fn level_end_key(&self, offset: usize) -> (usize, &[u8]) {
+        let ctx = &self.0 as *const DBCompactionFilterContext;
+        unsafe {
+            let mut key: *const u8 = ptr::null();
+            let mut len: i32 = 0;
+            let level = crocksdb_ffi::crocksdb_compactionfiltercontext_level_end_key(
+                ctx,
+                offset as i32,
+                &mut key,
+                &mut len,
+            );
+            let key_slice = std::slice::from_raw_parts(key, len as usize);
+            (level as usize, key_slice)
+        }
+    }
 }
 
 pub trait CompactionFilterFactory {

@@ -3083,6 +3083,21 @@ unsigned char crocksdb_compactionfiltercontext_is_bottommost_level(
   return context->rep.is_bottommost_level;
 }
 
+int crocksdb_compactionfiltercontext_num_levels(
+    crocksdb_compactionfiltercontext_t* context) {
+  return context->rep.level_end_keys.size();
+}
+
+int crocksdb_compactionfiltercontext_level_end_key(
+    crocksdb_compactionfiltercontext_t* context, int offset,
+    char const **key, int *len) {
+  int level = context->rep.level_end_keys[offset].first;
+  *key = context->rep.level_end_keys[offset].second.data();
+  *len = context->rep.level_end_keys[offset].second.size();
+  return level;
+}
+
+
 crocksdb_compactionfilterfactory_t* crocksdb_compactionfilterfactory_create(
     void* state, void (*destructor)(void*),
     crocksdb_compactionfilter_t* (*create_compaction_filter)(
