@@ -2124,6 +2124,11 @@ uint64_t crocksdb_compactionjobinfo_num_corrupt_keys(
   return info->rep.stats.num_corrupt_keys;
 }
 
+int crocksdb_compactionjobinfo_base_input_level(
+    const crocksdb_compactionjobinfo_t* info) {
+  return info->rep.base_input_level;
+}
+
 int crocksdb_compactionjobinfo_output_level(
     const crocksdb_compactionjobinfo_t* info) {
   return info->rep.output_level;
@@ -3291,6 +3296,11 @@ unsigned char crocksdb_compactionfiltercontext_is_manual_compaction(
 unsigned char crocksdb_compactionfiltercontext_is_bottommost_level(
     crocksdb_compactionfiltercontext_t* context) {
   return context->rep.is_bottommost_level;
+}
+
+int crocksdb_compactionfiltercontext_start_level(
+    crocksdb_compactionfiltercontext_t* context) {
+  return context->rep.start_level;
 }
 
 void crocksdb_compactionfiltercontext_file_numbers(
@@ -4874,6 +4884,7 @@ struct crocksdb_table_properties_collector_t : public TablePropertiesCollector {
                size_t value_len, int entry_type, uint64_t seq,
                uint64_t file_size);
   void (*finish_)(void*, crocksdb_user_collected_properties_t* props);
+  unsigned char (*need_compact_)(void*);
 
   virtual ~crocksdb_table_properties_collector_t() { destruct_(state_); }
 
@@ -4897,6 +4908,8 @@ struct crocksdb_table_properties_collector_t : public TablePropertiesCollector {
     return UserCollectedProperties();
   }
 
+  virtual bool NeedCompact() const override { return need_compact_(state_); }
+
   const char* Name() const override { return name_(state_); }
 };
 
@@ -4906,13 +4919,15 @@ crocksdb_table_properties_collector_create(
     void (*add)(void*, const char* key, size_t key_len, const char* value,
                 size_t value_len, int entry_type, uint64_t seq,
                 uint64_t file_size),
-    void (*finish)(void*, crocksdb_user_collected_properties_t* props)) {
+    void (*finish)(void*, crocksdb_user_collected_properties_t* props),
+    unsigned char need_compact(void*)) {
   auto c = new crocksdb_table_properties_collector_t;
   c->state_ = state;
   c->name_ = name;
   c->destruct_ = destruct;
   c->add_ = add;
   c->finish_ = finish;
+  c->need_compact_ = need_compact;
   return c;
 }
 

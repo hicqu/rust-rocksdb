@@ -13,11 +13,16 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc::{self, SyncSender};
+use std::sync::Arc;
+use std::time::Duration;
 
 use rocksdb::{
-    ColumnFamilyOptions, DBEntryType, DBOptions, Range, ReadOptions, SeekKey, TableFilter,
-    TableProperties, TablePropertiesCollection, TablePropertiesCollector,
-    TablePropertiesCollectorFactory, UserCollectedProperties, Writable, DB,
+    ColumnFamilyOptions, CompactOptions, CompactionJobInfo, DBEntryType, DBOptions, EventListener,
+    Range, ReadOptions, SeekKey, TableFilter, TableProperties, TablePropertiesCollection,
+    TablePropertiesCollector, TablePropertiesCollectorFactory, UserCollectedProperties, Writable,
+    DB,
 };
 
 use super::tempdir_with_prefix;
@@ -286,4 +291,151 @@ fn test_table_properties_with_table_filter() {
     assert!(iter.seek(SeekKey::from(key.as_ref())).unwrap());
     // First sst will be skipped
     assert_eq!(iter.key(), key5.as_ref());
+}
+
+#[test]
+fn test_collector_need_compact() {
+    struct PropsCollector {
+        ref_count: Arc<AtomicUsize>,
+        need_compact: Arc<AtomicBool>,
+    }
+    impl Drop for PropsCollector {
+        fn drop(&mut self) {
+            self.ref_count.fetch_sub(1, Ordering::Relaxed);
+        }
+    }
+    impl TablePropertiesCollector for PropsCollector {
+        fn add(&mut self, _: &[u8], _: &[u8], _: DBEntryType, _: u64, _: u64) {}
+        fn finish(&mut self) -> HashMap<Vec<u8>, Vec<u8>> {
+            Default::default()
+        }
+        fn need_compact(&self) -> bool {
+            self.need_compact.load(Ordering::Relaxed)
+        }
+    }
+
+    struct PropsCollectorFactory {
+        ref_count: Arc<AtomicUsize>,
+        sub_ref_count: Arc<AtomicUsize>,
+        need_compact: Arc<AtomicBool>,
+    }
+    impl Drop for PropsCollectorFactory {
+        fn drop(&mut self) {
+            self.ref_count.fetch_sub(1, Ordering::Relaxed);
+        }
+    }
+    impl TablePropertiesCollectorFactory for PropsCollectorFactory {
+        fn create_table_properties_collector(
+            &mut self,
+            _: u32,
+        ) -> Box<dyn TablePropertiesCollector> {
+            self.sub_ref_count.fetch_add(1, Ordering::Relaxed);
+            Box::new(PropsCollector {
+                ref_count: self.sub_ref_count.clone(),
+                need_compact: self.need_compact.clone(),
+            })
+        }
+    }
+
+    struct CompactionListener {
+        // Item layout: (input_level, output_level).
+        tx: SyncSender<(i32, i32)>,
+    }
+    impl EventListener for CompactionListener {
+        fn on_compaction_completed(&self, job: &CompactionJobInfo) {
+            let _ = self.tx.send((job.input_level(), job.output_level()));
+        }
+    }
+
+    let need_compact = Arc::new(AtomicBool::new(false));
+    let factory_counter = Arc::new(AtomicUsize::new(1));
+    let collector_counter = Arc::new(AtomicUsize::new(0));
+
+    let mut opts = DBOptions::new();
+    opts.create_if_missing(true);
+    let (tx, rx) = mpsc::sync_channel(16);
+    opts.add_event_listener(CompactionListener { tx });
+
+    let mut cf_opts = ColumnFamilyOptions::new();
+    cf_opts.add_table_properties_collector_factory(
+        "test_collector_need_compact",
+        Box::new(PropsCollectorFactory {
+            ref_count: factory_counter.clone(),
+            sub_ref_count: collector_counter.clone(),
+            need_compact: need_compact.clone(),
+        }),
+    );
+    cf_opts.set_num_levels(7);
+
+    let path = tempdir_with_prefix("_rust_rocksdb_test_collector_need_compact");
+    let db = DB::open_cf(
+        opts,
+        path.path().to_str().unwrap(),
+        vec![("default", cf_opts)],
+    )
+    .unwrap();
+
+    let cf_default = db.cf_handle("default").unwrap();
+
+    // Generate a sst with 4 entries.
+    let samples = vec![
+        (b"key1".to_vec(), b"value1".to_vec()),
+        (b"key2".to_vec(), b"value2".to_vec()),
+        (b"key3".to_vec(), b"value3".to_vec()),
+        (b"key4".to_vec(), b"value4".to_vec()),
+    ];
+    for &(ref k, ref v) in &samples {
+        db.put(k, v).unwrap();
+        assert_eq!(v.as_slice(), &*db.get(k).unwrap().unwrap());
+    }
+    db.flush(true).unwrap();
+
+    // Compact the SST file to level 5 manually.
+    let mut compact_opts = CompactOptions::new();
+    compact_opts.set_change_level(true);
+    compact_opts.set_target_level(5);
+    db.compact_range_cf_opt(cf_default, &compact_opts, None, None);
+
+    let level_file_counts = rocksdb_level_file_counts(&db, "default");
+    assert_eq!(level_file_counts[0], 0);
+    assert_eq!(level_file_counts[5], 1);
+    assert_eq!(
+        rocksdb_level_file_counts(&db, "default"),
+        vec![0, 0, 0, 0, 0, 1, 0]
+    );
+
+    // FIXME: seems `outlevel` should be 5, but it's 1 exactly.
+    let (inlevel, outlevel) = rx.recv_timeout(Duration::from_millis(500)).unwrap();
+    assert_eq!(inlevel, 0);
+    assert_eq!(outlevel, 1);
+
+    // Compact the SST file to level 1 manually, and some auto compactions will be triggered.
+    db.put(b"testkey", b"testvalue").unwrap();
+    db.flush(true).unwrap();
+    need_compact.store(true, Ordering::Relaxed);
+    compact_opts.set_target_level(1);
+    db.compact_range_cf_opt(cf_default, &compact_opts, None, None);
+    for exp_inlevel in &[0, 1, 2, 3, 4] {
+        let (inlevel, _) = rx.recv_timeout(Duration::from_millis(100)).unwrap();
+        assert_eq!(*exp_inlevel as i32, inlevel);
+    }
+    assert_eq!(
+        rocksdb_level_file_counts(&db, "default"),
+        vec![0, 2, 0, 0, 0, 0, 0]
+    );
+
+    // Drop the db instance, all counters should reach zero.
+    drop(db);
+    assert_eq!(factory_counter.load(Ordering::Relaxed), 0);
+    assert_eq!(collector_counter.load(Ordering::Relaxed), 0);
+}
+
+fn rocksdb_level_file_counts(db: &DB, cf: &str) -> Vec<usize> {
+    let cf_handle = db.cf_handle(cf).unwrap();
+    let metadata = db.get_column_family_meta_data(cf_handle);
+    let mut res = Vec::with_capacity(7);
+    for level_meta in metadata.get_levels() {
+        res.push(level_meta.get_files().len());
+    }
+    res
 }

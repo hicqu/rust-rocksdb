@@ -31,6 +31,11 @@ pub trait TablePropertiesCollector {
     /// Will be called when a table has already been built and is ready for
     /// writing the properties block.
     fn finish(&mut self) -> HashMap<Vec<u8>, Vec<u8>>;
+
+    /// Return whether the output file should be further compacted.
+    fn need_compact(&self) -> bool {
+        false
+    }
 }
 
 struct TablePropertiesCollectorHandle {
@@ -95,6 +100,13 @@ pub extern "C" fn finish(handle: *mut c_void, props: *mut DBUserCollectedPropert
     }
 }
 
+pub extern "C" fn need_compact(handle: *mut c_void) -> bool {
+    unsafe {
+        let handle = &mut *(handle as *mut TablePropertiesCollectorHandle);
+        handle.rep.need_compact()
+    }
+}
+
 pub unsafe fn new_table_properties_collector(
     cname: &str,
     collector: Box<dyn TablePropertiesCollector>,
@@ -106,5 +118,6 @@ pub unsafe fn new_table_properties_collector(
         destruct,
         add,
         finish,
+        need_compact,
     )
 }

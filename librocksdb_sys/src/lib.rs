@@ -1546,6 +1546,9 @@ extern "C" {
     pub fn crocksdb_compactionfiltercontext_is_bottommost_level(
         context: *const DBCompactionFilterContext,
     ) -> bool;
+    pub fn crocksdb_compactionfiltercontext_start_level(
+        context: *const DBCompactionFilterContext,
+    ) -> i32;
     pub fn crocksdb_compactionfiltercontext_file_numbers(
         context: *const DBCompactionFilterContext,
         buffer: *mut *const u64,
@@ -2017,6 +2020,7 @@ extern "C" {
             u64,
         ),
         finish: extern "C" fn(*mut c_void, *mut DBUserCollectedProperties),
+        need_compact: extern "C" fn(*mut c_void) -> bool,
     ) -> *mut DBTablePropertiesCollector;
 
     pub fn crocksdb_table_properties_collector_destroy(c: *mut DBTablePropertiesCollector);
@@ -2111,6 +2115,7 @@ extern "C" {
     ) -> *const DBTablePropertiesCollection;
     pub fn crocksdb_compactionjobinfo_elapsed_micros(info: *const DBCompactionJobInfo) -> u64;
     pub fn crocksdb_compactionjobinfo_num_corrupt_keys(info: *const DBCompactionJobInfo) -> u64;
+    pub fn crocksdb_compactionjobinfo_base_input_level(info: *const DBCompactionJobInfo) -> c_int;
     pub fn crocksdb_compactionjobinfo_output_level(info: *const DBCompactionJobInfo) -> c_int;
     pub fn crocksdb_compactionjobinfo_input_records(info: *const DBCompactionJobInfo) -> u64;
     pub fn crocksdb_compactionjobinfo_output_records(info: *const DBCompactionJobInfo) -> u64;

@@ -819,6 +819,8 @@ crocksdb_compactionjobinfo_elapsed_micros(const crocksdb_compactionjobinfo_t*);
 extern C_ROCKSDB_LIBRARY_API uint64_t
 crocksdb_compactionjobinfo_num_corrupt_keys(
     const crocksdb_compactionjobinfo_t*);
+extern C_ROCKSDB_LIBRARY_API int crocksdb_compactionjobinfo_base_input_level(
+    const crocksdb_compactionjobinfo_t*);
 extern C_ROCKSDB_LIBRARY_API int crocksdb_compactionjobinfo_output_level(
     const crocksdb_compactionjobinfo_t*);
 extern C_ROCKSDB_LIBRARY_API uint64_t
@@ -1339,6 +1341,9 @@ crocksdb_compactionfiltercontext_is_manual_compaction(
 
 extern C_ROCKSDB_LIBRARY_API unsigned char
 crocksdb_compactionfiltercontext_is_bottommost_level(
+    crocksdb_compactionfiltercontext_t* context);
+
+extern C_ROCKSDB_LIBRARY_API int crocksdb_compactionfiltercontext_start_level(
     crocksdb_compactionfiltercontext_t* context);
 
 extern C_ROCKSDB_LIBRARY_API void crocksdb_compactionfiltercontext_file_numbers(
@@ -1951,12 +1956,13 @@ crocksdb_table_properties_collection_iter_value(
 /* Table Properties Collector */
 
 extern C_ROCKSDB_LIBRARY_API crocksdb_table_properties_collector_t*
-crocksdb_table_properties_collector_create(
-    void* state, const char* (*name)(void*), void (*destruct)(void*),
-    void (*add)(void*, const char* key, size_t key_len, const char* value,
-                size_t value_len, int entry_type, uint64_t seq,
-                uint64_t file_size),
-    void (*finish)(void*, crocksdb_user_collected_properties_t* props));
+    crocksdb_table_properties_collector_create(
+        void* state, const char* (*name)(void*), void (*destruct)(void*),
+        void (*add)(void*, const char* key, size_t key_len, const char* value,
+                    size_t value_len, int entry_type, uint64_t seq,
+                    uint64_t file_size),
+        void (*finish)(void*, crocksdb_user_collected_properties_t* props),
+        unsigned char (*need_compact)(void*));
 
 extern C_ROCKSDB_LIBRARY_API void crocksdb_table_properties_collector_destroy(
     crocksdb_table_properties_collector_t*);

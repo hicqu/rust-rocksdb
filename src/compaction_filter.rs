@@ -180,6 +180,11 @@ impl CompactionFilterContext {
         unsafe { crocksdb_ffi::crocksdb_compactionfiltercontext_is_bottommost_level(ctx) }
     }
 
+    pub fn start_level(&self) -> i32 {
+        let ctx = &self.0 as *const DBCompactionFilterContext;
+        unsafe { crocksdb_ffi::crocksdb_compactionfiltercontext_start_level(ctx) }
+    }
+
     pub fn file_numbers(&self) -> &[u64] {
         let ctx = &self.0 as *const DBCompactionFilterContext;
         let (mut buffer, mut len): (*const u64, usize) = (ptr::null_mut(), 0);
